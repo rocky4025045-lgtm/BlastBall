@@ -1,0 +1,44 @@
+name: Build Blast Ball IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Run unit tests (simulator)
+        run: |
+          SIM=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [0-9]+ Pro \(' | sed 's/ ($//')
+          echo "Using simulator: $SIM"
+          xcodebuild test -project BlastBall.xcodeproj -scheme BlastBall \
+            -destination "platform=iOS Simulator,name=${SIM}" \
+            CODE_SIGNING_ALLOWED=NO | tail -40
+
+      - name: Build unsigned app for device
+        run: |
+          xcodebuild build -project BlastBall.xcodeproj -scheme BlastBall \
+            -configuration Release -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/BlastBall.app Payload/
+          zip -qry BlastBall-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BlastBall-unsigned-ipa
+          path: BlastBall-unsigned.ipa
